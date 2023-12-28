@@ -1,6 +1,10 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
+#define sckPin 8
+#define dataPin 10
+#define THRESHOLD 10000000
+
 // This will be the login credentials for our router
 const char* ssid = "NYCR24";
 const char* password = "clubmate";
@@ -9,19 +13,44 @@ const char* password = "clubmate";
 const int sensorID = 1;
 
 // IP address of the host computer + default port of the Web Server DAT in touchdesigner
-const char* serverName = "http://192.168.0.73:9980";
+const char* serverName = "http://192.168.0.69:9980";
+
+// tracks the previous state of the sensor for looping
+bool previouslyActive = false;
+
+void sendTriggerEvent() {
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClient client;
+    HTTPClient http;
+
+    // Your Domain name with URL path or IP address with path
+    http.begin(client, serverName);
+
+    http.addHeader("Content-Type", "text/plain");
+    int httpResponseCode = http.POST(String(sensorID));
 
 
-// For now, just sends a message every 5 seconds for testing
-unsigned long lastTime = 0;
-unsigned long timerDelay = 5000;
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+
+    // Free resources
+    http.end();
+  } else {
+    Serial.println("WiFi Disconnected");
+  }
+}
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
 
+  pinMode(dataPin, INPUT);  // Connect HX710 OUT to Arduino pin 10
+  pinMode(sckPin, OUTPUT);  // Connect HX710 SCK to Arduino pin 8
+
+
+  // Wifi Setup
   WiFi.begin(ssid, password);
   Serial.println("Connecting");
-  while(WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
@@ -31,29 +60,39 @@ void setup() {
 }
 
 void loop() {
-  //Send an HTTP POST request every 5 seconds
-  if ((millis() - lastTime) > timerDelay) {
-    //Check WiFi connection status
-    if(WiFi.status() == WL_CONNECTED){
-      WiFiClient client;
-      HTTPClient http;
-    
-      // Your Domain name with URL path or IP address with path
-      http.begin(client, serverName);
-      
-      http.addHeader("Content-Type", "text/plain");
-      int httpResponseCode = http.POST(String(sensorID));
 
-     
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
-        
-      // Free resources
-      http.end();
+
+  // wait for the current reading to finish
+  while (digitalRead(dataPin)) {}
+
+  // read 24 bits
+  long result = 0;
+  for (int i = 0; i < 24; i++) {
+    digitalWrite(sckPin, HIGH);
+    digitalWrite(sckPin, LOW);
+    result = result << 1;
+    if (digitalRead(dataPin)) {
+      result++;
     }
-    else {
-      Serial.println("WiFi Disconnected");
+  }
+
+  // get the 2s compliment
+  result = result ^ 0x800000;
+
+  // pulse the clock line 3 times to start the next pressure reading
+  for (char i = 0; i < 3; i++) {
+    digitalWrite(sckPin, HIGH);
+    digitalWrite(sckPin, LOW);
+  }
+
+  // display pressure
+  if (int(result) > THRESHOLD) {
+    if (previouslyActive == false) {
+      previouslyActive = true;
+      Serial.println("Triggered");
+      sendTriggerEvent();
     }
-    lastTime = millis();
+  } else {
+    previouslyActive = false;
   }
 }
