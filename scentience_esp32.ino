@@ -13,7 +13,7 @@ const char* password = "smellovision";
 const int sensorID = 1;
 
 // IP address of the host computer + default port of the Web Server DAT in touchdesigner
-const char* serverName = "httpxads://192.168.8.2:9980";
+const char* serverName = "http://192.168.8.2:9980";
 
 // tracks the previous state of the sensor for looping
 bool previouslyActive = false;
